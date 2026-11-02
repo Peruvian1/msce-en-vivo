@@ -629,11 +629,28 @@
     catalog = new Map(Object.entries(data).map(([name, v]) => [name.toLowerCase(), {cat: v[0], level: v[1], jobs: v[2]}]));
     fillCats(); render();
   }).catch(() => {});
-  document.querySelectorAll('.tabs button').forEach((button) => button.addEventListener('click', () => {
-    tab = button.dataset.tab;
+  function showTab(name) {
+    const button = document.querySelector(`.tabs button[data-tab="${name}"]`);
+    if (!button) return;
+    tab = name;
     document.querySelectorAll('.tabs button').forEach((b) => b.setAttribute('aria-selected', String(b === button)));
-    render();
+  }
+  // The link keeps the tab and the search, so a filter can be shared: #tab=prices&q=Gaia
+  function saveLink() {
+    const p = new URLSearchParams();
+    if (tab !== 'offers') p.set('tab', tab);
+    if ($('q').value.trim()) p.set('q', $('q').value.trim());
+    try { window.history.replaceState(null, '', p.toString() ? '#' + p : location.pathname + location.search); } catch (e) {}
+  }
+  document.querySelectorAll('.tabs button').forEach((button) => button.addEventListener('click', () => {
+    showTab(button.dataset.tab); saveLink(); render();
   }));
+  $('q').addEventListener('input', saveLink);
+  {
+    const p = new URLSearchParams(location.hash.slice(1));
+    if (p.get('q')) $('q').value = p.get('q');
+    if (p.get('tab')) showTab(p.get('tab'));
+  }
   $('setup-save').addEventListener('click', () => {
     base = $('setup-url').value.trim().replace(/\/+$/, ''); key = $('setup-key').value.trim();
     try { localStorage.setItem('msce-live', JSON.stringify({url: base, key})); } catch (e) {}

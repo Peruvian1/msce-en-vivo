@@ -18,3 +18,5 @@ Se publica con GitHub Pages: Settings → Pages → Deploy from a branch → `ma
 - "Cambio 24 h" en "Precios por ítem": mediana de las últimas 24 h contra las 24 h anteriores (hace falta al menos 3 precios en cada ventana).
 - Pestaña "Más vendidos": ventas (filas grises, una vez cada una) por ítem con cantidad de ventas, unidades, mesos movidos, su porcentaje del total y la mediana de venta; se ordena por cualquier columna.
 - Pestaña "Salud de los datos": filas cargadas, horas cubiertas, ventas sin repetir, porcentaje de equipo con estadísticas completas (en venta y vendido), filas sin mundo, sala o canal, y filas y jugadores por canal y por versión de MSCE.
+
+- El enlace guarda la pestaña y la búsqueda (`#tab=prices&q=Gaia`), así se puede compartir un filtro.
