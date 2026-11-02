@@ -17,3 +17,4 @@ Se publica con GitHub Pages: Settings → Pages → Deploy from a branch → `ma
 - Pestaña "Ofertas baratas": ofertas de las últimas 24 h con 20% o más de descuento contra la mediana de la última semana. En consumibles la referencia son ofertas y ventas; en equipo, solo ventas reales (8 o más), porque su precio depende de las estadísticas.
 - "Cambio 24 h" en "Precios por ítem": mediana de las últimas 24 h contra las 24 h anteriores (hace falta al menos 3 precios en cada ventana).
 - Pestaña "Más vendidos": ventas (filas grises, una vez cada una) por ítem con cantidad de ventas, unidades, mesos movidos, su porcentaje del total y la mediana de venta; se ordena por cualquier columna.
+- Pestaña "Salud de los datos": filas cargadas, horas cubiertas, ventas sin repetir, porcentaje de equipo con estadísticas completas (en venta y vendido), filas sin mundo, sala o canal, y filas y jugadores por canal y por versión de MSCE.
