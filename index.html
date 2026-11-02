@@ -126,6 +126,7 @@
     <div class="tabs" role="tablist">
       <button role="tab" aria-selected="true" data-tab="offers">Ofertas recientes</button>
       <button role="tab" aria-selected="false" data-tab="prices">Precios por ítem</button>
+      <button role="tab" aria-selected="false" data-tab="deals">Ofertas baratas</button>
     </div>
     <div class="panel"><div id="detail" hidden></div><table id="table"></table></div>
   </section>
@@ -231,8 +232,46 @@
     select.innerHTML = '<option value="">Todos los tipos</option>' + cats.map((c) => `<option value="${esc(c)}">${esc(ES[c] || c)}</option>`).join('');
     select.value = cats.includes(current) ? current : '';
   }
+  // Mediana de los últimos 7 días de cada ítem (ofertas y ventas), sin precios absurdos en consumibles.
+  function baselines(all) {
+    const since = Date.now() - 7 * 86400000, byItem = new Map();
+    for (const o of all) {
+      if (o.unit_price == null || stamp(o) < since || (o.state && o.state !== 'active' && !isSold(o))) continue;
+      const k = baseItem(o.item);
+      if (!byItem.has(k)) byItem.set(k, []);
+      byItem.get(k).push(o);
+    }
+    const out = new Map();
+    for (const [k, rows] of byItem) {
+      // Un equipo vale según sus estadísticas: su referencia son las ventas reales (8 o más), no lo que piden.
+      const used = rows[0].item_kind === 'plain' ? typical(rows).kept : rows.filter(isSold);
+      const kept = used.map((o) => Number(o.unit_price));
+      if (kept.length >= (rows[0].item_kind === 'plain' ? 5 : 8)) out.set(k, {med: median(kept), n: kept.length});
+    }
+    return out;
+  }
+  // Cambio de la mediana de las últimas 24 h contra las 24 h anteriores, por ítem.
+  function dayChange(all) {
+    const now = Date.now(), by = new Map();
+    for (const o of all) {
+      if (o.unit_price == null || (o.state && o.state !== 'active' && !isSold(o))) continue;
+      const age = now - stamp(o), k = baseItem(o.item);
+      if (age > 2 * 86400000) continue;
+      if (!by.has(k)) by.set(k, {now: [], before: [], kind: o.item_kind});
+      by.get(k)[age <= 86400000 ? 'now' : 'before'].push(Number(o.unit_price));
+    }
+    const out = new Map();
+    for (const [k, g] of by) {
+      if (g.now.length < 3 || g.before.length < 3) continue;
+      const trim = (v) => { if (g.kind !== 'plain') return v; const m = median(v); return v.filter((x) => x <= m * 20 && x >= m / 20); };
+      const a = median(trim(g.now)), b = median(trim(g.before));
+      if (b > 0) out.set(k, (a - b) / b);
+    }
+    return out;
+  }
+  const pct = (v) => v == null ? '—' : `<span style="color:var(--${v > 0.005 ? 'bad' : v < -0.005 ? 'good' : 'muted'})">${v > 0 ? '+' : ''}${(v * 100).toFixed(0)}%</span>`;
   // Orden de las tablas: se cambia con un clic en el encabezado.
-  const sorts = {offers: {key: 'seen', dir: -1}, prices: {key: 'item', dir: 1}};
+  const sorts = {offers: {key: 'seen', dir: -1}, prices: {key: 'item', dir: 1}, deals: {key: 'off', dir: -1}};
   const th = (tabName, key, label) => {
     const s = sorts[tabName];
     return `<th class="sortable" data-tab="${tabName}" data-sort="${key}"${s.key === key ? ` data-dir="${s.dir}"` : ''}>${label}</th>`;
@@ -460,6 +499,29 @@
           <td>${esc(o.seller)}</td><td>${esc(o.shop_name || '')}</td>
           <td class="small">${esc(o.world)} · ${esc(place(o))}</td>
           <td class="small">${esc(stats(o) || (o.item_kind === 'plain' ? '—' : o.stats_complete ? '' : 'pendientes'))}</td></tr>`).join('') + '</tbody>';
+    } else if (tab === 'deals') {
+      const base = baselines(dedupeSold([...offers.values()])), day = Date.now() - 86400000;
+      const seenKey = new Map();
+      const unique = [...rows].sort((a, b) => stamp(b) - stamp(a)).filter((o) => {  // la misma oferta vista en varias visitas es una sola
+        const k = `${o.seller}|${o.item}|${o.price}|${o.quantity}`;
+        if (seenKey.has(k)) return false;
+        seenKey.set(k, o); return true;
+      });
+      const deals = unique.filter((o) => o.unit_price != null && !isSold(o) && (!o.state || o.state === 'active') && stamp(o) >= day && base.has(baseItem(o.item)))
+        .map((o) => ({o, med: base.get(baseItem(o.item)).med, n: base.get(baseItem(o.item)).n}))
+        .map((d) => ({...d, off: 1 - Number(d.o.unit_price) / d.med})).filter((d) => d.off >= 0.2);
+      if (!deals.length) { table.innerHTML = '<tr><td class="empty">No hay ofertas 20% o más bajo la mediana de la última semana (en equipo, bajo sus ventas reales, con 8 o más ventas) con estos filtros.</td></tr>'; return; }
+      sortBy(deals, 'deals', {off: (d) => d.off, item: (d) => baseItem(d.o.item).toLowerCase(), level: (d) => level(d.o.item),
+        unit: (d) => Number(d.o.unit_price), med: (d) => d.med, seen: (d) => d.o.uploaded_at || ''});
+      table.innerHTML = `<thead><tr>${th('deals', 'seen', 'Visto')}${th('deals', 'item', 'Ítem')}${th('deals', 'level', 'Nivel')}${th('deals', 'unit', 'Por unidad')}${th('deals', 'med', 'Mediana 7 días')}${th('deals', 'off', 'Descuento')}<th>Jugador</th><th>Lugar</th><th>Estadísticas</th></tr></thead><tbody>` +
+        deals.slice(0, 300).map(({o, med, n, off}) => `<tr>
+          <td class="small">${esc(when(o.seen_at || o.uploaded_at))}</td>
+          <td><a class="item-link" data-item="${esc(baseItem(o.item))}">${esc(o.item)}</a> ${o.item_kind === 'equip' ? '<span class="tag equip">equipo</span>' : ''}</td>
+          <td class="num small">${levelText(o.item)}</td>
+          <td class="num">${fmt.format(o.unit_price)}</td><td class="num" title="${n} precios de referencia">${fmt.format(Math.round(med))}</td>
+          <td class="num"><b style="color:var(--good)">−${(off * 100).toFixed(0)}%</b></td>
+          <td>${esc(o.seller)}</td><td class="small">${esc(o.world)} · ${esc(place(o))}</td>
+          <td class="small">${esc(stats(o) || (o.item_kind === 'plain' ? '—' : o.stats_complete ? '' : 'pendientes'))}</td></tr>`).join('') + '</tbody>';
     } else {
       const groups = new Map();
       for (const o of rows) {
@@ -472,8 +534,9 @@
         g.prices.push(Number(o.unit_price)); g.sellers.add(o.seller);
         if (!g.cheapest || Number(o.unit_price) < Number(g.cheapest.unit_price)) g.cheapest = o;
       }
-      const list = [...groups.values()];
+      const list = [...groups.values()], change = dayChange(dedupeSold([...offers.values()]));
       for (const g of list) {
+        g.change = change.has(g.item) ? change.get(g.item) : null;
         if (g.kind === 'plain') {
           for (const field of ['prices', 'sold']) {
             if (g[field].length < 6) continue;
@@ -485,13 +548,13 @@
         g.med = g.prices.length ? median(g.prices) : -1; g.soldAvg = g.sold.length ? Math.round(mean(g.sold)) : -1;
       }
       sortBy(list, 'prices', {item: (g) => g.item.toLowerCase(), level: (g) => level(g.item), offers: (g) => g.prices.length, sellers: (g) => g.sellers.size,
-        min: (g) => g.min, avg: (g) => g.avg, med: (g) => g.med, sold: (g) => g.sold.length, soldAvg: (g) => g.soldAvg, last: (g) => g.last || ''});
+        change: (g) => g.change ?? -999, min: (g) => g.min, avg: (g) => g.avg, med: (g) => g.med, sold: (g) => g.sold.length, soldAvg: (g) => g.soldAvg, last: (g) => g.last || ''});
       const num = (v, x) => v.length ? fmt.format(x) : '—';
-      table.innerHTML = `<thead><tr>${th('prices', 'item', 'Ítem')}${th('prices', 'level', 'Nivel')}<th>Mundo</th>${th('prices', 'offers', 'Ofertas')}${th('prices', 'sellers', 'Jugadores')}${th('prices', 'min', 'Mínimo / u.')}${th('prices', 'avg', 'Promedio / u.')}${th('prices', 'med', 'Mediana / u.')}${th('prices', 'sold', 'Vendidos')}${th('prices', 'soldAvg', 'Venta promedio / u.')}<th>Más barato en</th>${th('prices', 'last', 'Último')}</tr></thead><tbody>` +
+      table.innerHTML = `<thead><tr>${th('prices', 'item', 'Ítem')}${th('prices', 'level', 'Nivel')}<th>Mundo</th>${th('prices', 'offers', 'Ofertas')}${th('prices', 'sellers', 'Jugadores')}${th('prices', 'change', 'Cambio 24 h')}${th('prices', 'min', 'Mínimo / u.')}${th('prices', 'avg', 'Promedio / u.')}${th('prices', 'med', 'Mediana / u.')}${th('prices', 'sold', 'Vendidos')}${th('prices', 'soldAvg', 'Venta promedio / u.')}<th>Más barato en</th>${th('prices', 'last', 'Último')}</tr></thead><tbody>` +
         list.map((g) => `<tr><td><a class="item-link" data-item="${esc(g.item)}">${esc(g.item)}</a> ${g.kind === 'equip' ? '<span class="tag equip">equipo</span>' : ''}${metaOf(g.item) ? `<div class="meta">${esc(metaText(g.item))}</div>` : ''}</td>
           <td class="num small">${levelText(g.item)}</td>
           <td class="small">${esc(g.world)}</td><td class="num">${g.prices.length}</td><td class="num">${g.sellers.size}</td>
-          <td class="num">${num(g.prices, g.min)}</td><td class="num">${num(g.prices, g.avg)}</td><td class="num">${num(g.prices, Math.round(g.med))}</td>
+          <td class="num">${pct(g.change)}</td><td class="num">${num(g.prices, g.min)}</td><td class="num">${num(g.prices, g.avg)}</td><td class="num">${num(g.prices, Math.round(g.med))}</td>
           <td class="num">${g.sold.length}</td><td class="num">${num(g.sold, g.soldAvg)}</td>
           <td class="small">${g.cheapest ? `${esc(g.cheapest.seller)} · ${esc(place(g.cheapest))}` : '—'}</td><td class="small">${esc(when(g.last))}</td></tr>`).join('') + '</tbody>';
     }

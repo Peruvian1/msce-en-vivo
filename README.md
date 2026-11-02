@@ -14,3 +14,5 @@ Se publica con GitHub Pages: Settings → Pages → Deploy from a branch → `ma
 - `catalog.json` trae el tipo, nivel y clase de cada equipo (del catálogo del juego de MSCE).
 - Una venta (fila gris) que se vio en varias visitas cuenta una sola vez (jugador, ítem, precio, cantidad y posición).
 - Los precios absurdos (más de 20 veces la mediana) se dejan fuera de los promedios y de la curva solo en consumibles y otros ítems sin estadísticas; el equipo nunca se recorta, porque con mejoras perfectas puede valer 100 veces más.
+- Pestaña "Ofertas baratas": ofertas de las últimas 24 h con 20% o más de descuento contra la mediana de la última semana. En consumibles la referencia son ofertas y ventas; en equipo, solo ventas reales (8 o más), porque su precio depende de las estadísticas.
+- "Cambio 24 h" en "Precios por ítem": mediana de las últimas 24 h contra las 24 h anteriores (hace falta al menos 3 precios en cada ventana).
