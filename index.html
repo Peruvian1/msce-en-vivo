@@ -127,6 +127,7 @@
       <button role="tab" aria-selected="true" data-tab="offers">Ofertas recientes</button>
       <button role="tab" aria-selected="false" data-tab="prices">Precios por ítem</button>
       <button role="tab" aria-selected="false" data-tab="deals">Ofertas baratas</button>
+      <button role="tab" aria-selected="false" data-tab="best">Más vendidos</button>
     </div>
     <div class="panel"><div id="detail" hidden></div><table id="table"></table></div>
   </section>
@@ -271,7 +272,7 @@
   }
   const pct = (v) => v == null ? '—' : `<span style="color:var(--${v > 0.005 ? 'bad' : v < -0.005 ? 'good' : 'muted'})">${v > 0 ? '+' : ''}${(v * 100).toFixed(0)}%</span>`;
   // Orden de las tablas: se cambia con un clic en el encabezado.
-  const sorts = {offers: {key: 'seen', dir: -1}, prices: {key: 'item', dir: 1}, deals: {key: 'off', dir: -1}};
+  const sorts = {offers: {key: 'seen', dir: -1}, prices: {key: 'item', dir: 1}, deals: {key: 'off', dir: -1}, best: {key: 'mesos', dir: -1}};
   const th = (tabName, key, label) => {
     const s = sorts[tabName];
     return `<th class="sortable" data-tab="${tabName}" data-sort="${key}"${s.key === key ? ` data-dir="${s.dir}"` : ''}>${label}</th>`;
@@ -499,6 +500,24 @@
           <td>${esc(o.seller)}</td><td>${esc(o.shop_name || '')}</td>
           <td class="small">${esc(o.world)} · ${esc(place(o))}</td>
           <td class="small">${esc(stats(o) || (o.item_kind === 'plain' ? '—' : o.stats_complete ? '' : 'pendientes'))}</td></tr>`).join('') + '</tbody>';
+    } else if (tab === 'best') {
+      // Lo que más se vendió (filas grises: ventas reales), por cantidad de ventas, unidades o mesos movidos.
+      const byItem = new Map();
+      for (const o of rows) {
+        if (!isSold(o) || o.unit_price == null) continue;
+        const k = baseItem(o.item);
+        if (!byItem.has(k)) byItem.set(k, {item: k, kind: o.item_kind, sales: 0, units: 0, mesos: 0, prices: []});
+        const g = byItem.get(k);
+        g.sales += 1; g.units += Number(o.quantity) || 1; g.mesos += Number(o.price) || 0; g.prices.push(Number(o.unit_price));
+      }
+      const list = [...byItem.values()].map((g) => ({...g, med: median(typical(g.prices.map((p) => ({item_kind: g.kind, unit_price: p}))).kept.map((r) => r.unit_price))}));
+      if (!list.length) { table.innerHTML = '<tr><td class="empty">Todavía no hay ventas con estos filtros.</td></tr>'; return; }
+      sortBy(list, 'best', {mesos: (g) => g.mesos, sales: (g) => g.sales, units: (g) => g.units, item: (g) => g.item.toLowerCase(), level: (g) => level(g.item), med: (g) => g.med});
+      const total = list.reduce((a, g) => a + g.mesos, 0);
+      table.innerHTML = `<thead><tr>${th('best', 'item', 'Ítem')}${th('best', 'level', 'Nivel')}${th('best', 'sales', 'Ventas')}${th('best', 'units', 'Unidades')}${th('best', 'mesos', 'Mesos')}<th>% del total</th>${th('best', 'med', 'Mediana de venta / u.')}</tr></thead><tbody>` +
+        list.slice(0, 300).map((g) => `<tr><td><a class="item-link" data-item="${esc(g.item)}">${esc(g.item)}</a> ${g.kind === 'equip' ? '<span class="tag equip">equipo</span>' : ''}${metaOf(g.item) ? `<div class="meta">${esc(metaText(g.item))}</div>` : ''}</td>
+          <td class="num small">${levelText(g.item)}</td><td class="num">${g.sales}</td><td class="num">${g.units}</td>
+          <td class="num">${fmt.format(g.mesos)}</td><td class="num small">${(g.mesos / total * 100).toFixed(1)}%</td><td class="num">${fmt.format(Math.round(g.med))}</td></tr>`).join('') + '</tbody>';
     } else if (tab === 'deals') {
       const base = baselines(dedupeSold([...offers.values()])), day = Date.now() - 86400000;
       const seenKey = new Map();

@@ -16,3 +16,4 @@ Se publica con GitHub Pages: Settings → Pages → Deploy from a branch → `ma
 - Los precios absurdos (más de 20 veces la mediana) se dejan fuera de los promedios y de la curva solo en consumibles y otros ítems sin estadísticas; el equipo nunca se recorta, porque con mejoras perfectas puede valer 100 veces más.
 - Pestaña "Ofertas baratas": ofertas de las últimas 24 h con 20% o más de descuento contra la mediana de la última semana. En consumibles la referencia son ofertas y ventas; en equipo, solo ventas reales (8 o más), porque su precio depende de las estadísticas.
 - "Cambio 24 h" en "Precios por ítem": mediana de las últimas 24 h contra las 24 h anteriores (hace falta al menos 3 precios en cada ventana).
+- Pestaña "Más vendidos": ventas (filas grises, una vez cada una) por ítem con cantidad de ventas, unidades, mesos movidos, su porcentaje del total y la mediana de venta; se ordena por cualquier columna.
