@@ -55,6 +55,9 @@
   tr.fresh td { background: var(--new); transition: background 2s; }
   .tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
   .tag.equip { border-color: var(--accent); color: var(--accent); }
+  .tag.sold { border-color: var(--good); color: var(--good); }
+  .legend { display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
   .empty { padding: 28px; text-align: center; color: var(--muted); }
   .setup { max-width: 560px; margin: 40px auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
   .item-link { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
@@ -94,6 +97,7 @@
         <option value="">Todos los ítems</option>
         <option value="equip">Solo equipo</option>
         <option value="plain">Sin estadísticas</option>
+        <option value="sold">Solo vendidos</option>
       </select>
       <label><input id="recent" type="checkbox" checked> Últimas 24 h</label>
     </div>
@@ -137,6 +141,10 @@
   const baseItem = (name) => String(name || '').replace(/(?:\s*\(\+\d+\))+$/, '').trim();
   const median = (v) => { const s = [...v].sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
   const mean = (v) => v.reduce((a, b) => a + b, 0) / v.length;
+  // Fila gris en la tienda: alguien ya la compró. Su precio es una venta, no una oferta.
+  const isSold = (o) => o.state === 'faded';
+  const soldTag = (o) => isSold(o) ? ' <span class="tag sold">vendido</span>' : '';
+  const stamp = (o) => new Date(o.seen_at || o.uploaded_at).getTime();
   let selected = null;
   const stats = (o) => Object.entries(o.stats || {}).map(([k, v]) => k === 'Remaining Enhancements' ? `${k}: ${v}` : `${k} ${v > 0 ? '+' : ''}${v}`).join(' · ');
   const place = (o) => `Ch ${o.channel ?? '?'} · Sala ${o.room ?? '?'}`;
@@ -191,7 +199,7 @@
     return [...offers.values()].filter((o) =>
       (!q || [o.item, o.seller, o.shop_name].some((v) => String(v || '').toLowerCase().includes(q))) &&
       (!world || String(o.world) === world) && (!channel || String(o.channel) === channel) &&
-      (!kind || (kind === 'plain' ? o.item_kind === 'plain' : o.item_kind !== 'plain')) &&
+      (!kind || (kind === 'sold' ? isSold(o) : kind === 'plain' ? o.item_kind === 'plain' : o.item_kind !== 'plain')) &&
       (!since || new Date(o.seen_at || o.uploaded_at).getTime() >= since));
   }
 
@@ -201,24 +209,38 @@
       (!world || String(o.world) === world) && (!channel || String(o.channel) === channel))
       .sort((a, b) => (b.seen_at || b.uploaded_at || '').localeCompare(a.seen_at || a.uploaded_at || ''));
     const priced = copies.filter((o) => o.unit_price != null && (!o.state || o.state === 'active'));
-    const prices = priced.map((o) => Number(o.unit_price));
+    const sold = copies.filter((o) => o.unit_price != null && isSold(o));
+    const prices = priced.map((o) => Number(o.unit_price)), soldPrices = sold.map((o) => Number(o.unit_price));
     const box = $('detail');
     let cards = '<p class="small">No hay copias de este ítem con los filtros elegidos.</p>';
-    if (prices.length) {
-      const stamp = (o) => new Date(o.seen_at || o.uploaded_at).getTime();
-      const first = Math.min(...priced.map(stamp)), last = Math.max(...priced.map(stamp));
-      cards = `<div class="cards">
+    if (prices.length || soldPrices.length) {
+      cards = '';
+      if (prices.length) {
+        const first = Math.min(...priced.map(stamp)), last = Math.max(...priced.map(stamp));
+        cards += `<h3 style="margin:8px 0 0">En venta</h3><div class="cards">
         <div class="card"><b>${fmt.format(Math.round(mean(prices)))}</b><span>Precio promedio / u.</span></div>
-        <div class="card"><b>${fmt.format(median(prices))}</b><span>Mediana / u.</span></div>
+        <div class="card"><b>${fmt.format(Math.round(median(prices)))}</b><span>Mediana / u.</span></div>
         <div class="card"><b>${fmt.format(Math.min(...prices))}</b><span>Mínimo</span></div>
         <div class="card"><b>${fmt.format(Math.max(...prices))}</b><span>Máximo</span></div>
         <div class="card"><b>${priced.length}</b><span>Copias registradas</span></div>
         <div class="card"><b class="small">${esc(when(new Date(first).toISOString()))}</b><span>Primera vez visto</span></div>
-        <div class="card"><b class="small">${esc(when(new Date(last).toISOString()))}</b><span>Última vez visto</span></div></div>` + chart(priced);
+        <div class="card"><b class="small">${esc(when(new Date(last).toISOString()))}</b><span>Última vez visto</span></div></div>`;
+      }
+      if (soldPrices.length) {
+        const lastSale = sold.reduce((a, b) => (stamp(b) > stamp(a) ? b : a));
+        cards += `<h3 style="margin:8px 0 0">Vendidos</h3><div class="cards">
+        <div class="card"><b>${fmt.format(Math.round(mean(soldPrices)))}</b><span>Precio de venta promedio / u.</span></div>
+        <div class="card"><b>${fmt.format(Math.round(median(soldPrices)))}</b><span>Mediana de venta / u.</span></div>
+        <div class="card"><b>${fmt.format(Math.min(...soldPrices))}</b><span>Venta más baja</span></div>
+        <div class="card"><b>${fmt.format(Math.max(...soldPrices))}</b><span>Venta más alta</span></div>
+        <div class="card"><b>${sold.length}</b><span>Ventas registradas</span></div>
+        <div class="card"><b class="small">${fmt.format(Number(lastSale.unit_price))} · ${esc(when(lastSale.seen_at || lastSale.uploaded_at))}</b><span>Última venta vista</span></div></div>`;
+      }
+      cards += chart(priced, sold);
     }
     box.innerHTML = `<button class="back" id="back">← Volver</button><h2 style="margin:4px 0">${esc(selected)}</h2>` + cards +
       '<table><thead><tr><th>Visto</th><th>Ítem</th><th>Cant.</th><th>Precio</th><th>Por unidad</th><th>Jugador</th><th>Tienda</th><th>Lugar</th><th>Estadísticas</th></tr></thead><tbody>' +
-      copies.slice(0, 300).map((o) => `<tr><td class="small">${esc(when(o.seen_at || o.uploaded_at))}</td><td>${esc(o.item)}</td>
+      copies.slice(0, 300).map((o) => `<tr><td class="small">${esc(when(o.seen_at || o.uploaded_at))}</td><td>${esc(o.item)}${soldTag(o)}</td>
         <td class="num">${fmt.format(o.quantity)}</td><td class="num">${fmt.format(o.price)}</td>
         <td class="num">${o.unit_price != null ? fmt.format(o.unit_price) : ''}</td><td>${esc(o.seller)}</td><td>${esc(o.shop_name || '')}</td>
         <td class="small">${esc(o.world)} · ${esc(place(o))}</td>
@@ -226,18 +248,21 @@
     $('back').addEventListener('click', () => { selected = null; render(); });
   }
 
-  // Precio por unidad de cada copia a lo largo del tiempo (curva de precios).
-  function chart(priced) {
-    const pts = priced.map((o) => [new Date(o.seen_at || o.uploaded_at).getTime(), Number(o.unit_price)]).sort((a, b) => a[0] - b[0]);
+  // Precio por unidad de cada copia a lo largo del tiempo (curva de precios):
+  // ofertas en el color del texto y ventas (filas grises del juego) en verde.
+  function chart(priced, sold) {
+    const pts = [...priced.map((o) => [stamp(o), Number(o.unit_price), false]), ...sold.map((o) => [stamp(o), Number(o.unit_price), true])]
+      .sort((a, b) => a[0] - b[0]);
     if (pts.length < 2) return '';
     const W = 800, H = 160, m = 8;
     const x0 = pts[0][0], x1 = pts[pts.length - 1][0] || x0 + 1;
     const lo = Math.min(...pts.map((p) => p[1])), hi = Math.max(...pts.map((p) => p[1]));
     const X = (t) => m + (x1 === x0 ? W / 2 : (t - x0) / (x1 - x0) * (W - 2 * m));
     const Y = (v) => H - m - (hi === lo ? (H - 2 * m) / 2 : (v - lo) / (hi - lo) * (H - 2 * m));
-    const dots = pts.map((p) => `<circle cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="3" fill="currentColor" opacity=".6"/>`).join('');
+    const dots = pts.map((p) => `<circle cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="3" fill="${p[2] ? 'var(--good)' : 'currentColor'}" opacity=".7"/>`).join('');
+    const legend = sold.length ? '<span class="legend"><i style="background:currentColor"></i>en venta</span><span class="legend"><i style="background:var(--good)"></i>vendido</span>' : '';
     return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Precio por unidad en el tiempo">${dots}</svg>
-      <p class="small">Cada punto es una copia vista: de ${esc(when(new Date(x0).toISOString()))} a ${esc(when(new Date(x1).toISOString()))}, de ${fmt.format(lo)} a ${fmt.format(hi)} por unidad.</p>`;
+      <p class="small">${legend}Cada punto es una copia vista: de ${esc(when(new Date(x0).toISOString()))} a ${esc(when(new Date(x1).toISOString()))}, de ${fmt.format(lo)} a ${fmt.format(hi)} por unidad.</p>`;
   }
 
   function render() {
@@ -250,7 +275,7 @@
       table.innerHTML = '<thead><tr><th>Visto</th><th>Ítem</th><th>Cant.</th><th>Precio</th><th>Por unidad</th><th>Jugador</th><th>Tienda</th><th>Lugar</th><th>Estadísticas</th></tr></thead><tbody>' +
         rows.slice(0, 500).map((o) => `<tr class="${fresh.has(o.record_id) ? 'fresh' : ''}">
           <td class="small" title="${esc(ago(o.seen_at || o.uploaded_at))}">${esc(when(o.seen_at || o.uploaded_at))}</td>
-          <td><a class="item-link" data-item="${esc(baseItem(o.item))}">${esc(o.item)}</a> ${o.item_kind === 'equip' ? '<span class="tag equip">equipo</span>' : ''}</td>
+          <td><a class="item-link" data-item="${esc(baseItem(o.item))}">${esc(o.item)}</a> ${o.item_kind === 'equip' ? '<span class="tag equip">equipo</span>' : ''}${soldTag(o)}</td>
           <td class="num">${fmt.format(o.quantity)}</td><td class="num">${fmt.format(o.price)}</td>
           <td class="num">${o.unit_price != null ? fmt.format(o.unit_price) : ''}</td>
           <td>${esc(o.seller)}</td><td>${esc(o.shop_name || '')}</td>
@@ -259,20 +284,23 @@
     } else {
       const groups = new Map();
       for (const o of rows) {
-        if (o.unit_price == null || o.state && o.state !== 'active') continue;
+        if (o.unit_price == null || o.state && o.state !== 'active' && !isSold(o)) continue;
         const k = `${o.world}|${baseItem(o.item)}`;
-        if (!groups.has(k)) groups.set(k, {world: o.world, item: baseItem(o.item), kind: o.item_kind, prices: [], sellers: new Set(), cheapest: o, last: o.seen_at});
+        if (!groups.has(k)) groups.set(k, {world: o.world, item: baseItem(o.item), kind: o.item_kind, prices: [], sold: [], sellers: new Set(), cheapest: null, last: o.seen_at});
         const g = groups.get(k);
-        g.prices.push(Number(o.unit_price)); g.sellers.add(o.seller);
-        if (Number(o.unit_price) < Number(g.cheapest.unit_price)) g.cheapest = o;
         if ((o.seen_at || '') > (g.last || '')) g.last = o.seen_at;
+        if (isSold(o)) { g.sold.push(Number(o.unit_price)); continue; }
+        g.prices.push(Number(o.unit_price)); g.sellers.add(o.seller);
+        if (!g.cheapest || Number(o.unit_price) < Number(g.cheapest.unit_price)) g.cheapest = o;
       }
       const list = [...groups.values()].sort((a, b) => a.item.localeCompare(b.item));
-      table.innerHTML = '<thead><tr><th>Ítem</th><th>Mundo</th><th>Ofertas</th><th>Jugadores</th><th>Mínimo / u.</th><th>Promedio / u.</th><th>Mediana / u.</th><th>Más barato en</th><th>Último</th></tr></thead><tbody>' +
+      const num = (v, f) => v.length ? fmt.format(f(v)) : '—';
+      table.innerHTML = '<thead><tr><th>Ítem</th><th>Mundo</th><th>Ofertas</th><th>Jugadores</th><th>Mínimo / u.</th><th>Promedio / u.</th><th>Mediana / u.</th><th>Vendidos</th><th>Venta promedio / u.</th><th>Más barato en</th><th>Último</th></tr></thead><tbody>' +
         list.map((g) => `<tr><td><a class="item-link" data-item="${esc(g.item)}">${esc(g.item)}</a> ${g.kind === 'equip' ? '<span class="tag equip">equipo</span>' : ''}</td>
           <td class="small">${esc(g.world)}</td><td class="num">${g.prices.length}</td><td class="num">${g.sellers.size}</td>
-          <td class="num">${fmt.format(Math.min(...g.prices))}</td><td class="num">${fmt.format(Math.round(mean(g.prices)))}</td><td class="num">${fmt.format(median(g.prices))}</td>
-          <td class="small">${esc(g.cheapest.seller)} · ${esc(place(g.cheapest))}</td><td class="small">${esc(when(g.last))}</td></tr>`).join('') + '</tbody>';
+          <td class="num">${num(g.prices, (v) => Math.min(...v))}</td><td class="num">${num(g.prices, (v) => Math.round(mean(v)))}</td><td class="num">${num(g.prices, median)}</td>
+          <td class="num">${g.sold.length}</td><td class="num">${num(g.sold, (v) => Math.round(mean(v)))}</td>
+          <td class="small">${g.cheapest ? `${esc(g.cheapest.seller)} · ${esc(place(g.cheapest))}` : '—'}</td><td class="small">${esc(when(g.last))}</td></tr>`).join('') + '</tbody>';
     }
   }
 
