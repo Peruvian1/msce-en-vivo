@@ -20,3 +20,5 @@ Se publica con GitHub Pages: Settings → Pages → Deploy from a branch → `ma
 - Pestaña "Salud de los datos": filas cargadas, horas cubiertas, ventas sin repetir, porcentaje de equipo con estadísticas completas (en venta y vendido), filas sin mundo, sala o canal, y filas y jugadores por canal y por versión de MSCE.
 
 - El enlace guarda la pestaña y la búsqueda (`#tab=prices&q=Gaia`), así se puede compartir un filtro.
+
+- Alertas de precio: cada alerta guarda un ítem y un precio máximo por unidad en tu navegador, y la página lista las ofertas que la cumplen.

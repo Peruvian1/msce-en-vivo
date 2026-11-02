@@ -25,6 +25,13 @@
     --bg: #151412; --panel: #1f1d1a; --text: #f1ede6; --muted: #a39d92; --line: #34312c;
     --accent: #efb96d; --accent-soft: #3a2e1e; --good: #6cc48f; --bad: #ef8a76; --new: #4a3d14;
   }
+  .alerts { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 10px 0; }
+  .alerts summary { cursor: pointer; font-weight: 600; }
+  .alerts form { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+  .alerts input { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
+  .alerts .hit { color: var(--good); font-weight: 600; }
+  .alerts li { margin: 3px 0; }
+  .alerts button { cursor: pointer; }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
          font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
@@ -123,6 +130,15 @@
       <select id="lvlpre" title="Rango de nivel"><option value="">Cualquier nivel</option><option value="0-29">Nivel 1–29</option><option value="30-49">Nivel 30–49</option><option value="50-69">Nivel 50–69</option><option value="70-99">Nivel 70–99</option><option value="100-250">Nivel 100+</option></select>
       <label>Nivel <input id="lmin" type="number" min="0" max="250" placeholder="desde"> – <input id="lmax" type="number" min="0" max="250" placeholder="hasta"></label>
     </div>
+    <details class="alerts" id="alerts">
+      <summary id="alerts-title">Alertas de precio</summary>
+      <form id="alert-form">
+        <input id="alert-item" placeholder="Ítem (nombre o parte)" required>
+        <input id="alert-price" type="number" min="1" placeholder="Precio máximo por unidad" required>
+        <button type="submit">Agregar</button>
+      </form>
+      <ul id="alert-list"></ul>
+    </details>
     <div class="tabs" role="tablist">
       <button role="tab" aria-selected="true" data-tab="offers">Ofertas recientes</button>
       <button role="tab" aria-selected="false" data-tab="prices">Precios por ítem</button>
@@ -481,7 +497,38 @@
     return {html, bind};
   }
 
+  // Price alerts: kept in this browser; an offer at or under the limit is listed as it shows up.
+  let alerts = [];
+  try { alerts = JSON.parse(localStorage.getItem('msce-alerts') || '[]').filter((a) => a && a.item && a.price > 0); } catch (e) {}
+  function drawAlerts() {
+    const list = [...offers.values()].filter((o) => o.state !== 'faded' && o.unit_price != null);
+    let hits = 0;
+    $('alert-list').innerHTML = alerts.map((a, i) => {
+      const found = list.filter((o) => baseItem(o.item).toLowerCase().includes(a.item.toLowerCase()) && Number(o.unit_price) <= a.price)
+        .sort((x, y) => Number(x.unit_price) - Number(y.unit_price));
+      hits += found.length ? 1 : 0;
+      const best = found[0];
+      return `<li>${esc(a.item)} ≤ ${fmt.format(a.price)} <button data-del="${i}" aria-label="Quitar alerta">✕</button>` +
+        (best ? ` <span class="hit">${found.length} oferta${found.length === 1 ? '' : 's'}, la mejor ${fmt.format(best.unit_price)} por ${esc(best.seller)} · ${esc(best.item)}</span>` : ' <span class="small">sin ofertas ahora</span>') + '</li>';
+    }).join('');
+    $('alerts-title').textContent = 'Alertas de precio' + (alerts.length ? ` (${hits} con ofertas)` : '');
+    if (hits) $('alerts').open = true;
+  }
+  $('alert-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    alerts.push({item: $('alert-item').value.trim(), price: Number($('alert-price').value)});
+    try { localStorage.setItem('msce-alerts', JSON.stringify(alerts)); } catch (e) {}
+    $('alert-form').reset(); drawAlerts();
+  });
+  $('alert-list').addEventListener('click', (event) => {
+    const del = event.target.closest('[data-del]');
+    if (!del) return;
+    alerts.splice(Number(del.dataset.del), 1);
+    try { localStorage.setItem('msce-alerts', JSON.stringify(alerts)); } catch (e) {}
+    drawAlerts();
+  });
   function render() {
+    drawAlerts();
     const rows = visible(), table = $('table');
     $('detail').hidden = selected === null; table.hidden = selected !== null;
     if (selected !== null) { renderDetail(); return; }
