@@ -58,6 +58,22 @@
   .tag.sold { border-color: var(--good); color: var(--good); }
   .legend { display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; }
   .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+  th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+  th.sortable:hover { color: var(--text); }
+  th.sortable[data-dir]::after { content: ' ▲'; font-size: 9px; }
+  th.sortable[data-dir="-1"]::after { content: ' ▼'; }
+  .filters.gear input[type=number] { width: 76px; }
+  .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .ranges { display: flex; gap: 4px; margin: 6px 0; }
+  .ranges button { font: inherit; font-size: 12px; color: var(--muted); background: transparent; border: 1px solid var(--line);
+         border-radius: 999px; padding: 3px 12px; cursor: pointer; }
+  .ranges button[aria-pressed=true] { color: var(--text); background: var(--accent-soft); border-color: var(--accent); }
+  .chartwrap { position: relative; }
+  .chart { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--muted); touch-action: none; }
+  .chart text { fill: var(--muted); font-size: 11px; }
+  .chart .grid { stroke: var(--line); stroke-width: 1; }
+  .tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+         padding: 6px 9px; font-size: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.18); white-space: nowrap; z-index: 2; }
   .empty { padding: 28px; text-align: center; color: var(--muted); }
   .setup { max-width: 560px; margin: 40px auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
   .item-link { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
@@ -67,7 +83,6 @@
   .card { border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; background: var(--bg); min-width: 110px; }
   .card b { display: block; font-size: 1.15em; }
   .card span { font-size: .8em; opacity: .7; }
-  .chart { width: 100%; height: 160px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
   .setup input { width: 100%; margin: 6px 0 12px; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
                  background: var(--bg); color: var(--text); }
   .setup button { font: inherit; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent-soft);
@@ -100,6 +115,13 @@
         <option value="sold">Solo vendidos</option>
       </select>
       <label><input id="recent" type="checkbox" checked> Últimas 24 h</label>
+    </div>
+    <div class="filters gear" id="gear">
+      <select id="group" title="Grupo de equipo"><option value="">Todo tipo de ítem</option><option value="weapon">Armas</option><option value="armor">Armadura</option><option value="accessory">Accesorios</option></select>
+      <select id="cat" title="Tipo de equipo"><option value="">Todos los tipos</option></select>
+      <select id="job" title="Clase"><option value="">Todas las clases</option><option value="Warrior">Guerrero</option><option value="Magician">Mago</option><option value="Bowman">Arquero</option><option value="Thief">Ladrón</option><option value="Pirate">Pirata</option><option value="common">Sin clase (cualquiera)</option></select>
+      <select id="lvlpre" title="Rango de nivel"><option value="">Cualquier nivel</option><option value="0-29">Nivel 1–29</option><option value="30-49">Nivel 30–49</option><option value="50-69">Nivel 50–69</option><option value="70-99">Nivel 70–99</option><option value="100-250">Nivel 100+</option></select>
+      <label>Nivel <input id="lmin" type="number" min="0" max="250" placeholder="desde"> – <input id="lmax" type="number" min="0" max="250" placeholder="hasta"></label>
     </div>
     <div class="tabs" role="tablist">
       <button role="tab" aria-selected="true" data-tab="offers">Ofertas recientes</button>
@@ -148,6 +170,52 @@
   let selected = null;
   const stats = (o) => Object.entries(o.stats || {}).map(([k, v]) => k === 'Remaining Enhancements' ? `${k}: ${v}` : `${k} ${v > 0 ? '+' : ''}${v}`).join(' · ');
   const place = (o) => `Ch ${o.channel ?? '?'} · Sala ${o.room ?? '?'}`;
+
+  // Tipo, nivel y clase de cada equipo (catalog.json, del catálogo del juego).
+  const ES = {Hat: 'Sombrero', Top: 'Camiseta', Bottom: 'Pantalón', Overall: 'Overall', Shoes: 'Zapatos', Glove: 'Guantes', Cape: 'Capa', Shield: 'Escudo',
+    Earrings: 'Aretes', Claw: 'Garras', 'One-Handed Blunt Weapon': 'Maza 1 mano', Dagger: 'Daga', 'One-Handed Sword': 'Espada 1 mano', Bow: 'Arco',
+    'One-Handed Axe': 'Hacha 1 mano', 'Two-Handed Sword': 'Espada 2 manos', Wand: 'Varita', Crossbow: 'Ballesta', 'Pole Arm': 'Lanza larga',
+    'Two-Handed Axe': 'Hacha 2 manos', 'Two-Handed Blunt': 'Maza 2 manos', Spear: 'Lanza', Staff: 'Bastón'};
+  const JOBS = {Warrior: 'Guerrero', Magician: 'Mago', Bowman: 'Arquero', Thief: 'Ladrón', Pirate: 'Pirata'};
+  const GROUPS = {
+    weapon: ['Claw', 'One-Handed Blunt Weapon', 'Dagger', 'One-Handed Sword', 'Bow', 'One-Handed Axe', 'Two-Handed Sword', 'Wand', 'Crossbow', 'Pole Arm', 'Two-Handed Axe', 'Two-Handed Blunt', 'Spear', 'Staff'],
+    armor: ['Hat', 'Top', 'Bottom', 'Overall', 'Shoes', 'Glove', 'Cape', 'Shield'],
+    accessory: ['Earrings']};
+  let catalog = new Map();
+  const metaOf = (name) => { const k = baseItem(name).toLowerCase(); return catalog.get(k) || catalog.get(k.replace(/\s*\([mf]\)$/, '')) || null; };
+  const metaText = (name) => {
+    const m = metaOf(name);
+    return m ? `${ES[m.cat] || m.cat} · Nivel ${m.level} · ${m.jobs.length ? m.jobs.map((j) => JOBS[j] || j).join('/') : 'Sin clase requerida'}` : '';
+  };
+  function gearOk(name) {
+    const group = $('group').value, cat = $('cat').value, job = $('job').value, lmin = $('lmin').value, lmax = $('lmax').value;
+    if (!group && !cat && !job && lmin === '' && lmax === '') return true;
+    const m = metaOf(name);
+    if (!m) return false;
+    if (group && !GROUPS[group].includes(m.cat)) return false;
+    if (cat && m.cat !== cat) return false;
+    if (job === 'common' ? m.jobs.length : job && m.jobs.length && !m.jobs.includes(job)) return false;
+    if (lmin !== '' && m.level < Number(lmin)) return false;
+    if (lmax !== '' && m.level > Number(lmax)) return false;
+    return true;
+  }
+  function fillCats() {
+    const group = $('group').value, select = $('cat'), current = select.value;
+    const cats = (group ? GROUPS[group] : Object.values(GROUPS).flat()).filter((c) => [...catalog.values()].some((m) => m.cat === c));
+    select.innerHTML = '<option value="">Todos los tipos</option>' + cats.map((c) => `<option value="${esc(c)}">${esc(ES[c] || c)}</option>`).join('');
+    select.value = cats.includes(current) ? current : '';
+  }
+  // Orden de las tablas: se cambia con un clic en el encabezado.
+  const sorts = {offers: {key: 'seen', dir: -1}, prices: {key: 'item', dir: 1}};
+  const th = (tabName, key, label) => {
+    const s = sorts[tabName];
+    return `<th class="sortable" data-tab="${tabName}" data-sort="${key}"${s.key === key ? ` data-dir="${s.dir}"` : ''}>${label}</th>`;
+  };
+  const cmp = (a, b) => (typeof a === 'string' || typeof b === 'string') ? String(a).localeCompare(String(b)) : a - b;
+  const sortBy = (list, tabName, keys) => {
+    const s = sorts[tabName], f = keys[s.key] || keys[Object.keys(keys)[0]];
+    return list.sort((a, b) => s.dir * cmp(f(a), f(b)) || cmp(keys.item(a), keys.item(b)));
+  };
 
   function setStatus(text, bad) {
     $('status').className = bad ? 'bad' : '';
@@ -200,19 +268,37 @@
       (!q || [o.item, o.seller, o.shop_name].some((v) => String(v || '').toLowerCase().includes(q))) &&
       (!world || String(o.world) === world) && (!channel || String(o.channel) === channel) &&
       (!kind || (kind === 'sold' ? isSold(o) : kind === 'plain' ? o.item_kind === 'plain' : o.item_kind !== 'plain')) &&
-      (!since || new Date(o.seen_at || o.uploaded_at).getTime() >= since));
+      gearOk(o.item) && (!since || new Date(o.seen_at || o.uploaded_at).getTime() >= since));
   }
+
+  // Historial completo del ítem elegido: se pide a la base aparte, porque la lista en vivo guarda solo lo más reciente.
+  let history = null, range = '7d';
+  async function loadHistory(item) {
+    history = null;
+    try {
+      const url = `${base}/rest/v1/msce_offers?select=*&item=ilike.${encodeURIComponent(item + '*')}&order=uploaded_at.desc&limit=5000`;
+      const response = await fetch(url, {headers: {apikey: key, Authorization: `Bearer ${key}`}});
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const rows = await response.json();
+      if (selected === item) { history = rows.filter((o) => baseItem(o.item).toLowerCase() === item.toLowerCase()); render(); }
+    } catch (error) {
+      if (selected === item) { history = []; render(); }
+    }
+  }
+  const RANGES = {'24h': 1, '7d': 7, '30d': 30, 'all': Infinity};
+  const compact = (v) => v >= 1e6 ? `${+(v / 1e6).toFixed(v >= 1e7 ? 0 : 2)}M` : v >= 1e4 ? `${Math.round(v / 1e3)}k` : v >= 1e3 ? `${+(v / 1e3).toFixed(1)}k` : String(Math.round(v));
 
   function renderDetail() {
     const world = $('world').value, channel = $('channel').value;
-    const copies = [...offers.values()].filter((o) => baseItem(o.item) === selected &&
-      (!world || String(o.world) === world) && (!channel || String(o.channel) === channel))
+    const all = new Map();
+    for (const o of [...(history || []), ...offers.values()]) if (baseItem(o.item).toLowerCase() === selected.toLowerCase()) all.set(o.record_id, o);
+    const copies = [...all.values()].filter((o) => (!world || String(o.world) === world) && (!channel || String(o.channel) === channel))
       .sort((a, b) => (b.seen_at || b.uploaded_at || '').localeCompare(a.seen_at || a.uploaded_at || ''));
     const priced = copies.filter((o) => o.unit_price != null && (!o.state || o.state === 'active'));
     const sold = copies.filter((o) => o.unit_price != null && isSold(o));
     const prices = priced.map((o) => Number(o.unit_price)), soldPrices = sold.map((o) => Number(o.unit_price));
     const box = $('detail');
-    let cards = '<p class="small">No hay copias de este ítem con los filtros elegidos.</p>';
+    let cards = '<p class="small">No hay copias de este ítem con los filtros elegidos.</p>', plot = null;
     if (prices.length || soldPrices.length) {
       cards = '';
       if (prices.length) {
@@ -236,33 +322,94 @@
         <div class="card"><b>${sold.length}</b><span>Ventas registradas</span></div>
         <div class="card"><b class="small">${fmt.format(Number(lastSale.unit_price))} · ${esc(when(lastSale.seen_at || lastSale.uploaded_at))}</b><span>Última venta vista</span></div></div>`;
       }
-      cards += chart(priced, sold);
+      const since = RANGES[range] === Infinity ? 0 : Date.now() - RANGES[range] * 86400000;
+      plot = chart(priced.filter((o) => stamp(o) >= since), sold.filter((o) => stamp(o) >= since));
+      cards += '<h3 style="margin:8px 0 0">Curva de precio</h3><div class="ranges">' +
+        Object.keys(RANGES).map((r) => `<button data-range="${r}" aria-pressed="${r === range}">${r === 'all' ? 'Todo' : r === '24h' ? '24 h' : r.replace('d', ' días')}</button>`).join('') +
+        (history === null ? '<span class="small" style="align-self:center;margin-left:8px">Cargando el historial…</span>' : '') + '</div>' + plot.html;
     }
-    box.innerHTML = `<button class="back" id="back">← Volver</button><h2 style="margin:4px 0">${esc(selected)}</h2>` + cards +
+    const m = metaText(selected);
+    box.innerHTML = `<button class="back" id="back">← Volver</button><h2 style="margin:4px 0">${esc(selected)}</h2>${m ? `<div class="meta">${esc(m)}</div>` : ''}` + cards +
       '<table><thead><tr><th>Visto</th><th>Ítem</th><th>Cant.</th><th>Precio</th><th>Por unidad</th><th>Jugador</th><th>Tienda</th><th>Lugar</th><th>Estadísticas</th></tr></thead><tbody>' +
       copies.slice(0, 300).map((o) => `<tr><td class="small">${esc(when(o.seen_at || o.uploaded_at))}</td><td>${esc(o.item)}${soldTag(o)}</td>
         <td class="num">${fmt.format(o.quantity)}</td><td class="num">${fmt.format(o.price)}</td>
         <td class="num">${o.unit_price != null ? fmt.format(o.unit_price) : ''}</td><td>${esc(o.seller)}</td><td>${esc(o.shop_name || '')}</td>
         <td class="small">${esc(o.world)} · ${esc(place(o))}</td>
         <td class="small">${esc(stats(o) || (o.item_kind === 'plain' ? '—' : o.stats_complete ? '' : 'pendientes'))}</td></tr>`).join('') + '</tbody></table>';
-    $('back').addEventListener('click', () => { selected = null; render(); });
+    $('back').addEventListener('click', () => { selected = null; history = null; render(); });
+    box.querySelectorAll('.ranges button').forEach((button) => button.addEventListener('click', () => { range = button.dataset.range; render(); }));
+    if (plot) plot.bind(box);
   }
 
-  // Precio por unidad de cada copia a lo largo del tiempo (curva de precios):
-  // ofertas en el color del texto y ventas (filas grises del juego) en verde.
+  // Curva de precio: por hora (hasta 2 días) o por día, la mediana y el mínimo de lo que estaba en venta,
+  // los puntos de cada copia vista y, en verde, las ventas (filas grises del juego). Pasa el puntero por encima para ver el detalle.
   function chart(priced, sold) {
-    const pts = [...priced.map((o) => [stamp(o), Number(o.unit_price), false]), ...sold.map((o) => [stamp(o), Number(o.unit_price), true])]
-      .sort((a, b) => a[0] - b[0]);
-    if (pts.length < 2) return '';
-    const W = 800, H = 160, m = 8;
-    const x0 = pts[0][0], x1 = pts[pts.length - 1][0] || x0 + 1;
-    const lo = Math.min(...pts.map((p) => p[1])), hi = Math.max(...pts.map((p) => p[1]));
-    const X = (t) => m + (x1 === x0 ? W / 2 : (t - x0) / (x1 - x0) * (W - 2 * m));
-    const Y = (v) => H - m - (hi === lo ? (H - 2 * m) / 2 : (v - lo) / (hi - lo) * (H - 2 * m));
-    const dots = pts.map((p) => `<circle cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="3" fill="${p[2] ? 'var(--good)' : 'currentColor'}" opacity=".7"/>`).join('');
-    const legend = sold.length ? '<span class="legend"><i style="background:currentColor"></i>en venta</span><span class="legend"><i style="background:var(--good)"></i>vendido</span>' : '';
-    return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Precio por unidad en el tiempo">${dots}</svg>
-      <p class="small">${legend}Cada punto es una copia vista: de ${esc(when(new Date(x0).toISOString()))} a ${esc(when(new Date(x1).toISOString()))}, de ${fmt.format(lo)} a ${fmt.format(hi)} por unidad.</p>`;
+    const none = {html: '<p class="small">No hay datos en este rango.</p>', bind() {}};
+    const pts = [...priced, ...sold];
+    if (!pts.length) return none;
+    const times = pts.map(stamp), t0 = Math.min(...times), t1 = Math.max(...times);
+    const bucket = t1 - t0 <= 2 * 86400000 ? 3600000 : 86400000;
+    const groups = new Map();
+    const add = (o, field) => {
+      const t = Math.floor(stamp(o) / bucket) * bucket;
+      if (!groups.has(t)) groups.set(t, {t, l: [], s: []});
+      groups.get(t)[field].push(Number(o.unit_price));
+    };
+    priced.forEach((o) => add(o, 'l')); sold.forEach((o) => add(o, 's'));
+    const data = [...groups.values()].sort((a, b) => a.t - b.t).map((g) => ({t: g.t, n: g.l.length, min: g.l.length ? Math.min(...g.l) : null,
+      med: g.l.length ? median(g.l) : null, sn: g.s.length, smed: g.s.length ? median(g.s) : null}));
+    const W = 800, H = 250, L = 54, R = 12, T = 12, B = 28;
+    const shown = data.flatMap((d) => [d.min, d.med, d.smed]).concat(sold.map((o) => Number(o.unit_price))).filter((v) => v != null);
+    let lo = Math.min(...shown), hi = Math.max(...shown);
+    const pad = hi === lo ? Math.max(1, hi * .1) : (hi - lo) * .1;
+    lo = Math.max(0, lo - pad); hi += pad;
+    const xa = data[0].t - bucket / 2, xb = data[data.length - 1].t + bucket / 2;
+    const X = (t) => L + (xb === xa ? (W - L - R) / 2 : (t - xa) / (xb - xa) * (W - L - R));
+    const Y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+    const line = (field, color, dash) => {
+      const part = data.filter((d) => d[field] != null);
+      if (!part.length) return '';
+      const path = part.map((d, i) => `${i ? 'L' : 'M'}${X(d.t + bucket / 2).toFixed(1)},${Y(d[field]).toFixed(1)}`).join('');
+      return `<path d="${path}" fill="none" stroke="${color}" stroke-width="2"${dash ? ' stroke-dasharray="5 4"' : ''}/>` +
+        part.map((d) => `<circle cx="${X(d.t + bucket / 2).toFixed(1)}" cy="${Y(d[field]).toFixed(1)}" r="2.6" fill="${color}"/>`).join('');
+    };
+    let grid = '';
+    for (let i = 0; i <= 4; i++) {
+      const v = lo + (hi - lo) * i / 4, y = Y(v).toFixed(1);
+      grid += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/><text x="${L - 6}" y="${+y + 4}" text-anchor="end">${compact(v)}</text>`;
+    }
+    const span = xb - xa;
+    for (let i = 0; i <= 4; i++) {
+      const t = xa + span * i / 4, d = new Date(t);
+      const label = span <= 2 * 86400000 ? `${pad2(d.getHours())}:${pad2(d.getMinutes())}` : `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}`;
+      grid += `<text x="${X(t).toFixed(1)}" y="${H - 8}" text-anchor="${i === 0 ? 'start' : i === 4 ? 'end' : 'middle'}">${label}</text>`;
+    }
+    const dots = priced.map((o) => Number(o.unit_price)).map((v, i) => v >= lo && v <= hi ?
+      `<circle cx="${X(stamp(priced[i])).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="1.8" fill="currentColor" opacity=".25"/>` : '').join('');
+    const saleDots = sold.map((o) => `<circle cx="${X(stamp(o)).toFixed(1)}" cy="${Y(Number(o.unit_price)).toFixed(1)}" r="3.5" fill="var(--good)" stroke="var(--panel)" stroke-width="1"/>`).join('');
+    const legend = '<span class="legend"><i style="background:var(--accent)"></i>mediana en venta</span><span class="legend"><i style="background:var(--muted)"></i>mínimo en venta</span>' +
+      (sold.length ? '<span class="legend"><i style="background:var(--good)"></i>vendido</span>' : '');
+    const html = `<div class="chartwrap"><svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Curva de precio por unidad">${grid}${dots}${line('min', 'var(--muted)', true)}${line('med', 'var(--accent)')}${line('smed', 'var(--good)')}${saleDots}<line id="cursor" class="grid" y1="${T}" y2="${H - B}" x1="0" x2="0" style="display:none"/></svg><div class="tip" hidden></div></div>
+      <p class="small">${legend}Un punto por ${bucket === 3600000 ? 'hora' : 'día'}; los puntos tenues son cada copia vista. De ${fmt.format(Math.round(Math.min(...shown)))} a ${fmt.format(Math.round(Math.max(...shown)))} por unidad.</p>`;
+    const bind = (box) => {
+      const svg = box.querySelector('svg.chart'), tip = box.querySelector('.tip'), cursor = svg.querySelector('#cursor');
+      const leave = () => { tip.hidden = true; cursor.style.display = 'none'; };
+      svg.addEventListener('mouseleave', leave);
+      svg.addEventListener('mousemove', (event) => {
+        const rect = svg.getBoundingClientRect(), x = (event.clientX - rect.left) / rect.width * W;
+        const near = data.reduce((a, d) => (Math.abs(X(d.t + bucket / 2) - x) < Math.abs(X(a.t + bucket / 2) - x) ? d : a));
+        const cx = X(near.t + bucket / 2);
+        cursor.style.display = ''; cursor.setAttribute('x1', cx); cursor.setAttribute('x2', cx);
+        tip.innerHTML = `<b>${esc(when(new Date(near.t).toISOString()))}</b><br>` +
+          (near.n ? `En venta: ${near.n} · mín ${fmt.format(near.min)} · mediana ${fmt.format(Math.round(near.med))}<br>` : '') +
+          (near.sn ? `Vendidos: ${near.sn} · mediana ${fmt.format(Math.round(near.smed))}` : '');
+        tip.hidden = false;
+        const wrap = box.querySelector('.chartwrap').getBoundingClientRect();
+        tip.style.left = Math.min(Math.max(0, event.clientX - wrap.left + 12), Math.max(0, wrap.width - tip.offsetWidth)) + 'px';
+        tip.style.top = Math.max(0, event.clientY - wrap.top - tip.offsetHeight - 10) + 'px';
+      });
+    };
+    return {html, bind};
   }
 
   function render() {
@@ -270,12 +417,16 @@
     $('detail').hidden = selected === null; table.hidden = selected !== null;
     if (selected !== null) { renderDetail(); return; }
     if (!rows.length) { table.innerHTML = '<tr><td class="empty">Todavía no hay ofertas con estos filtros.</td></tr>'; return; }
+    const level = (name) => { const m = metaOf(name); return m ? m.level : -1; };
+    const levelText = (name) => { const m = metaOf(name); return m ? m.level : '—'; };
     if (tab === 'offers') {
-      rows.sort((a, b) => (b.uploaded_at || '').localeCompare(a.uploaded_at || ''));
-      table.innerHTML = '<thead><tr><th>Visto</th><th>Ítem</th><th>Cant.</th><th>Precio</th><th>Por unidad</th><th>Jugador</th><th>Tienda</th><th>Lugar</th><th>Estadísticas</th></tr></thead><tbody>' +
+      sortBy(rows, 'offers', {seen: (o) => o.uploaded_at || '', item: (o) => baseItem(o.item).toLowerCase(), level: (o) => level(o.item),
+        price: (o) => Number(o.price), unit: (o) => Number(o.unit_price ?? -1), seller: (o) => String(o.seller || '').toLowerCase()});
+      table.innerHTML = `<thead><tr>${th('offers', 'seen', 'Visto')}${th('offers', 'item', 'Ítem')}${th('offers', 'level', 'Nivel')}<th>Cant.</th>${th('offers', 'price', 'Precio')}${th('offers', 'unit', 'Por unidad')}${th('offers', 'seller', 'Jugador')}<th>Tienda</th><th>Lugar</th><th>Estadísticas</th></tr></thead><tbody>` +
         rows.slice(0, 500).map((o) => `<tr class="${fresh.has(o.record_id) ? 'fresh' : ''}">
           <td class="small" title="${esc(ago(o.seen_at || o.uploaded_at))}">${esc(when(o.seen_at || o.uploaded_at))}</td>
-          <td><a class="item-link" data-item="${esc(baseItem(o.item))}">${esc(o.item)}</a> ${o.item_kind === 'equip' ? '<span class="tag equip">equipo</span>' : ''}${soldTag(o)}</td>
+          <td><a class="item-link" data-item="${esc(baseItem(o.item))}">${esc(o.item)}</a> ${o.item_kind === 'equip' ? '<span class="tag equip">equipo</span>' : ''}${soldTag(o)}${metaOf(o.item) ? `<div class="meta">${esc(metaText(o.item))}</div>` : ''}</td>
+          <td class="num small">${levelText(o.item)}</td>
           <td class="num">${fmt.format(o.quantity)}</td><td class="num">${fmt.format(o.price)}</td>
           <td class="num">${o.unit_price != null ? fmt.format(o.unit_price) : ''}</td>
           <td>${esc(o.seller)}</td><td>${esc(o.shop_name || '')}</td>
@@ -293,13 +444,20 @@
         g.prices.push(Number(o.unit_price)); g.sellers.add(o.seller);
         if (!g.cheapest || Number(o.unit_price) < Number(g.cheapest.unit_price)) g.cheapest = o;
       }
-      const list = [...groups.values()].sort((a, b) => a.item.localeCompare(b.item));
-      const num = (v, f) => v.length ? fmt.format(f(v)) : '—';
-      table.innerHTML = '<thead><tr><th>Ítem</th><th>Mundo</th><th>Ofertas</th><th>Jugadores</th><th>Mínimo / u.</th><th>Promedio / u.</th><th>Mediana / u.</th><th>Vendidos</th><th>Venta promedio / u.</th><th>Más barato en</th><th>Último</th></tr></thead><tbody>' +
-        list.map((g) => `<tr><td><a class="item-link" data-item="${esc(g.item)}">${esc(g.item)}</a> ${g.kind === 'equip' ? '<span class="tag equip">equipo</span>' : ''}</td>
+      const list = [...groups.values()];
+      for (const g of list) {
+        g.min = g.prices.length ? Math.min(...g.prices) : -1; g.avg = g.prices.length ? Math.round(mean(g.prices)) : -1;
+        g.med = g.prices.length ? median(g.prices) : -1; g.soldAvg = g.sold.length ? Math.round(mean(g.sold)) : -1;
+      }
+      sortBy(list, 'prices', {item: (g) => g.item.toLowerCase(), level: (g) => level(g.item), offers: (g) => g.prices.length, sellers: (g) => g.sellers.size,
+        min: (g) => g.min, avg: (g) => g.avg, med: (g) => g.med, sold: (g) => g.sold.length, soldAvg: (g) => g.soldAvg, last: (g) => g.last || ''});
+      const num = (v, x) => v.length ? fmt.format(x) : '—';
+      table.innerHTML = `<thead><tr>${th('prices', 'item', 'Ítem')}${th('prices', 'level', 'Nivel')}<th>Mundo</th>${th('prices', 'offers', 'Ofertas')}${th('prices', 'sellers', 'Jugadores')}${th('prices', 'min', 'Mínimo / u.')}${th('prices', 'avg', 'Promedio / u.')}${th('prices', 'med', 'Mediana / u.')}${th('prices', 'sold', 'Vendidos')}${th('prices', 'soldAvg', 'Venta promedio / u.')}<th>Más barato en</th>${th('prices', 'last', 'Último')}</tr></thead><tbody>` +
+        list.map((g) => `<tr><td><a class="item-link" data-item="${esc(g.item)}">${esc(g.item)}</a> ${g.kind === 'equip' ? '<span class="tag equip">equipo</span>' : ''}${metaOf(g.item) ? `<div class="meta">${esc(metaText(g.item))}</div>` : ''}</td>
+          <td class="num small">${levelText(g.item)}</td>
           <td class="small">${esc(g.world)}</td><td class="num">${g.prices.length}</td><td class="num">${g.sellers.size}</td>
-          <td class="num">${num(g.prices, (v) => Math.min(...v))}</td><td class="num">${num(g.prices, (v) => Math.round(mean(v)))}</td><td class="num">${num(g.prices, median)}</td>
-          <td class="num">${g.sold.length}</td><td class="num">${num(g.sold, (v) => Math.round(mean(v)))}</td>
+          <td class="num">${num(g.prices, g.min)}</td><td class="num">${num(g.prices, g.avg)}</td><td class="num">${num(g.prices, Math.round(g.med))}</td>
+          <td class="num">${g.sold.length}</td><td class="num">${num(g.sold, g.soldAvg)}</td>
           <td class="small">${g.cheapest ? `${esc(g.cheapest.seller)} · ${esc(place(g.cheapest))}` : '—'}</td><td class="small">${esc(when(g.last))}</td></tr>`).join('') + '</tbody>';
     }
   }
@@ -311,9 +469,25 @@
 
   $('live').addEventListener('click', (event) => {
     const link = event.target.closest('.item-link');
-    if (link) { selected = link.dataset.item; render(); window.scrollTo(0, 0); }
+    if (link) { selected = link.dataset.item; history = null; render(); loadHistory(selected); window.scrollTo(0, 0); }
   });
-  for (const id of ['q', 'world', 'channel', 'kind', 'recent']) $(id).addEventListener('input', render);
+  $('table').addEventListener('click', (event) => {
+    const head = event.target.closest('th.sortable');
+    if (!head) return;
+    const s = sorts[head.dataset.tab];
+    s.dir = s.key === head.dataset.sort ? -s.dir : (['item', 'seller'].includes(head.dataset.sort) ? 1 : -1); s.key = head.dataset.sort;
+    render();
+  });
+  for (const id of ['q', 'world', 'channel', 'kind', 'recent', 'cat', 'job', 'lmin', 'lmax']) $(id).addEventListener('input', render);
+  $('group').addEventListener('input', () => { fillCats(); render(); });
+  $('lvlpre').addEventListener('input', () => {
+    const [lo, hi] = $('lvlpre').value ? $('lvlpre').value.split('-') : ['', ''];
+    $('lmin').value = lo; $('lmax').value = hi; render();
+  });
+  fetch('catalog.json').then((r) => r.json()).then((data) => {
+    catalog = new Map(Object.entries(data).map(([name, v]) => [name.toLowerCase(), {cat: v[0], level: v[1], jobs: v[2]}]));
+    fillCats(); render();
+  }).catch(() => {});
   document.querySelectorAll('.tabs button').forEach((button) => button.addEventListener('click', () => {
     tab = button.dataset.tab;
     document.querySelectorAll('.tabs button').forEach((b) => b.setAttribute('aria-selected', String(b === button)));
