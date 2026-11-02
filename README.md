@@ -22,3 +22,5 @@ Se publica con GitHub Pages: Settings → Pages → Deploy from a branch → `ma
 - El enlace guarda la pestaña y la búsqueda (`#tab=prices&q=Gaia`), así se puede compartir un filtro.
 
 - Alertas de precio: cada alerta guarda un ítem y un precio máximo por unidad en tu navegador, y la página lista las ofertas que la cumplen.
+
+- En el celular las pestañas se desplazan de lado y la página ya no se desborda.
