@@ -128,6 +128,7 @@
       <button role="tab" aria-selected="false" data-tab="prices">Precios por ítem</button>
       <button role="tab" aria-selected="false" data-tab="deals">Ofertas baratas</button>
       <button role="tab" aria-selected="false" data-tab="best">Más vendidos</button>
+      <button role="tab" aria-selected="false" data-tab="health">Salud de los datos</button>
     </div>
     <div class="panel"><div id="detail" hidden></div><table id="table"></table></div>
   </section>
@@ -484,7 +485,7 @@
     const rows = visible(), table = $('table');
     $('detail').hidden = selected === null; table.hidden = selected !== null;
     if (selected !== null) { renderDetail(); return; }
-    if (!rows.length) { table.innerHTML = '<tr><td class="empty">Todavía no hay ofertas con estos filtros.</td></tr>'; return; }
+    if (!rows.length && tab !== 'health') { table.innerHTML = '<tr><td class="empty">Todavía no hay ofertas con estos filtros.</td></tr>'; return; }
     const level = (name) => { const m = metaOf(name); return m ? m.level : -1; };
     const levelText = (name) => { const m = metaOf(name); return m ? m.level : '—'; };
     if (tab === 'offers') {
@@ -500,6 +501,29 @@
           <td>${esc(o.seller)}</td><td>${esc(o.shop_name || '')}</td>
           <td class="small">${esc(o.world)} · ${esc(place(o))}</td>
           <td class="small">${esc(stats(o) || (o.item_kind === 'plain' ? '—' : o.stats_complete ? '' : 'pendientes'))}</td></tr>`).join('') + '</tbody>';
+    } else if (tab === 'health') {
+      // Para saber si el escaneo va bien sin abrir la base: cobertura, calidad de las estadísticas y lo que falta.
+      const all = [...offers.values()], uniq = dedupeSold(all), eq = uniq.filter((o) => o.item_kind === 'equip');
+      const share = (n, d) => d ? `${n} de ${d} (${Math.round(n / d * 100)}%)` : '—';
+      const times = all.map(stamp).filter((t) => !isNaN(t)), span = times.length ? (Math.max(...times) - Math.min(...times)) / 3600000 : 0;
+      const eqActive = eq.filter((o) => !isSold(o)), eqSold = eq.filter(isSold);
+      const count = (f) => { const m = new Map(); for (const o of all) { const k = f(o); m.set(k, (m.get(k) || 0) + 1); } return [...m.entries()]; };
+      const sellers = (o) => new Set(all.filter((x) => String(x.channel) === String(o)).map((x) => x.seller)).size;
+      const lines = [
+        ['Filas cargadas', `${fmt.format(all.length)} (${fmt.format(all.length - uniq.length)} ventas repetidas contadas una vez)`],
+        ['Tiempo cubierto', `${span.toFixed(1)} horas · última subida ${ago(newest) || '—'}`],
+        ['Ítems distintos / jugadores', `${new Set(all.map((o) => baseItem(o.item))).size} / ${new Set(all.map((o) => o.seller)).size}`],
+        ['Ventas (filas grises, sin repetir)', String(uniq.filter(isSold).length)],
+        ['Equipo en venta con estadísticas completas', share(eqActive.filter((o) => o.stats_complete).length, eqActive.length)],
+        ['Equipo vendido con estadísticas', share(eqSold.filter((o) => Object.keys(o.stats || {}).length).length, eqSold.length)],
+        ['Filas sin mundo (unknown)', share(all.filter((o) => !o.world || o.world === 'unknown').length, all.length)],
+        ['Filas sin sala o sin canal', share(all.filter((o) => o.room == null || o.channel == null).length, all.length)],
+      ];
+      const chans = count((o) => o.channel ?? '?').sort((a, b) => String(a[0]).localeCompare(String(b[0]), 'es', {numeric: true}));
+      const vers = count((o) => o.msce_version || '?').sort((a, b) => String(b[0]).localeCompare(String(a[0]), 'es', {numeric: true}));
+      table.innerHTML = '<tbody>' + lines.map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num">${esc(v)}</td></tr>`).join('') +
+        `<tr><td colspan="2"><b>Por canal</b><div class="small">${chans.map(([c, n]) => `Canal ${esc(c)}: ${n} filas${c === '?' ? '' : `, ${sellers(c)} jugador${sellers(c) === 1 ? '' : 'es'}`}`).join(' · ')}</div></td></tr>` +
+        `<tr><td colspan="2"><b>Por versión de MSCE</b><div class="small">${vers.map(([v, n]) => `${esc(v)}: ${n} filas`).join(' · ')}</div></td></tr></tbody>`;
     } else if (tab === 'best') {
       // Lo que más se vendió (filas grises: ventas reales), por cantidad de ventas, unidades o mesos movidos.
       const byItem = new Map();
