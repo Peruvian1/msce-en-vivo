@@ -12,3 +12,5 @@ Se publica con GitHub Pages: Settings → Pages → Deploy from a branch → `ma
 - Cada columna de las tablas se ordena con un clic en su encabezado (nivel, precio, ofertas, vendidos...).
 - La página de cada ítem pide su historial completo a la base y dibuja la curva de precio: mediana y mínimo en venta por hora o por día, cada copia vista y las ventas en verde, con rangos de 24 h, 7 días, 30 días y todo.
 - `catalog.json` trae el tipo, nivel y clase de cada equipo (del catálogo del juego de MSCE).
+- Una venta (fila gris) que se vio en varias visitas cuenta una sola vez (jugador, ítem, precio, cantidad y posición).
+- Los precios absurdos (más de 20 veces la mediana) se dejan fuera de los promedios y de la curva solo en consumibles y otros ítems sin estadísticas; el equipo nunca se recorta, porque con mejoras perfectas puede valer 100 veces más.

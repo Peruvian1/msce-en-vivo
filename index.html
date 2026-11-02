@@ -167,6 +167,32 @@
   const isSold = (o) => o.state === 'faded';
   const soldTag = (o) => isSold(o) ? ' <span class="tag sold">vendido</span>' : '';
   const stamp = (o) => new Date(o.seen_at || o.uploaded_at).getTime();
+  // Una fila gris sigue en la tienda: en cada visita se ve la misma venta. Se cuenta una sola vez
+  // (jugador, ítem, precio, cantidad y posición en la lista); queda la copia con más estadísticas.
+  const saleKey = (o) => o.slot != null && o.slot !== '' && !String(o.slot).startsWith('R')
+    ? `${o.seller}|${baseItem(o.item).toLowerCase()}|${o.price}|${o.quantity}|${o.slot}` : null;
+  function dedupeSold(list) {
+    const seen = new Map(), out = [];
+    for (const o of list) {
+      const key = isSold(o) ? saleKey(o) : null;
+      if (!key) { out.push(o); continue; }
+      const at = seen.get(key);
+      if (at === undefined) { seen.set(key, out.length); out.push(o); continue; }
+      const kept = out[at], n = (x) => Object.keys(x.stats || {}).length;
+      if (n(o) > n(kept) || (n(o) === n(kept) && (o.uploaded_at || '') > (kept.uploaded_at || ''))) out[at] = o;
+    }
+    return out;
+  }
+  // Precios absurdos (un error o un troll) solo se descartan en consumibles y otros ítems sin estadísticas:
+  // un equipo con sus mejoras perfectas puede valer 100 veces más y es un precio real.
+  function typical(rows) {
+    if (!rows.length || rows[0].item_kind !== 'plain') return {kept: rows, dropped: 0};
+    const priced = rows.filter((o) => o.unit_price != null);
+    if (priced.length < 6) return {kept: rows, dropped: 0};
+    const med = median(priced.map((o) => Number(o.unit_price)));
+    const kept = rows.filter((o) => o.unit_price == null || (Number(o.unit_price) <= med * 20 && Number(o.unit_price) >= med / 20));
+    return {kept, dropped: rows.length - kept.length};
+  }
   let selected = null;
   const stats = (o) => Object.entries(o.stats || {}).map(([k, v]) => k === 'Remaining Enhancements' ? `${k}: ${v}` : `${k} ${v > 0 ? '+' : ''}${v}`).join(' · ');
   const place = (o) => `Ch ${o.channel ?? '?'} · Sala ${o.room ?? '?'}`;
@@ -264,7 +290,7 @@
   function visible() {
     const q = $('q').value.trim().toLowerCase(), world = $('world').value, channel = $('channel').value, kind = $('kind').value;
     const since = $('recent').checked ? Date.now() - 86400000 : 0;
-    return [...offers.values()].filter((o) =>
+    return dedupeSold([...offers.values()]).filter((o) =>
       (!q || [o.item, o.seller, o.shop_name].some((v) => String(v || '').toLowerCase().includes(q))) &&
       (!world || String(o.world) === world) && (!channel || String(o.channel) === channel) &&
       (!kind || (kind === 'sold' ? isSold(o) : kind === 'plain' ? o.item_kind === 'plain' : o.item_kind !== 'plain')) &&
@@ -292,10 +318,11 @@
     const world = $('world').value, channel = $('channel').value;
     const all = new Map();
     for (const o of [...(history || []), ...offers.values()]) if (baseItem(o.item).toLowerCase() === selected.toLowerCase()) all.set(o.record_id, o);
-    const copies = [...all.values()].filter((o) => (!world || String(o.world) === world) && (!channel || String(o.channel) === channel))
+    const copies = dedupeSold([...all.values()]).filter((o) => (!world || String(o.world) === world) && (!channel || String(o.channel) === channel))
       .sort((a, b) => (b.seen_at || b.uploaded_at || '').localeCompare(a.seen_at || a.uploaded_at || ''));
-    const priced = copies.filter((o) => o.unit_price != null && (!o.state || o.state === 'active'));
-    const sold = copies.filter((o) => o.unit_price != null && isSold(o));
+    const pricedAll = typical(copies.filter((o) => o.unit_price != null && (!o.state || o.state === 'active')));
+    const soldAll = typical(copies.filter((o) => o.unit_price != null && isSold(o)));
+    const priced = pricedAll.kept, sold = soldAll.kept, ignored = pricedAll.dropped + soldAll.dropped;
     const prices = priced.map((o) => Number(o.unit_price)), soldPrices = sold.map((o) => Number(o.unit_price));
     const box = $('detail');
     let cards = '<p class="small">No hay copias de este ítem con los filtros elegidos.</p>', plot = null;
@@ -328,6 +355,7 @@
         Object.keys(RANGES).map((r) => `<button data-range="${r}" aria-pressed="${r === range}">${r === 'all' ? 'Todo' : r === '24h' ? '24 h' : r.replace('d', ' días')}</button>`).join('') +
         (history === null ? '<span class="small" style="align-self:center;margin-left:8px">Cargando el historial…</span>' : '') + '</div>' + plot.html;
     }
+    if (ignored) cards = `<p class="small">${ignored} precio${ignored > 1 ? 's' : ''} atípico${ignored > 1 ? 's' : ''} (más de 20 veces la mediana) no cuenta${ignored > 1 ? 'n' : ''} en los promedios ni en la curva.</p>` + cards;
     const m = metaText(selected);
     box.innerHTML = `<button class="back" id="back">← Volver</button><h2 style="margin:4px 0">${esc(selected)}</h2>${m ? `<div class="meta">${esc(m)}</div>` : ''}` + cards +
       '<table><thead><tr><th>Visto</th><th>Ítem</th><th>Cant.</th><th>Precio</th><th>Por unidad</th><th>Jugador</th><th>Tienda</th><th>Lugar</th><th>Estadísticas</th></tr></thead><tbody>' +
@@ -446,6 +474,13 @@
       }
       const list = [...groups.values()];
       for (const g of list) {
+        if (g.kind === 'plain') {
+          for (const field of ['prices', 'sold']) {
+            if (g[field].length < 6) continue;
+            const med = median(g[field]);
+            g[field] = g[field].filter((v) => v <= med * 20 && v >= med / 20);
+          }
+        }
         g.min = g.prices.length ? Math.min(...g.prices) : -1; g.avg = g.prices.length ? Math.round(mean(g.prices)) : -1;
         g.med = g.prices.length ? median(g.prices) : -1; g.soldAvg = g.sold.length ? Math.round(mean(g.sold)) : -1;
       }
