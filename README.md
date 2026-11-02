@@ -5,3 +5,10 @@ Ofertas del Free Market que va leyendo MSCE (MapleStory Market Scanner), en tiem
 La página lee una tabla de Supabase con la clave publicable, que solo permite leer. MSCE sube las ofertas con su propia clave de escritura, que no está en este repositorio.
 
 Se publica con GitHub Pages: Settings → Pages → Deploy from a branch → `main`, carpeta `/ (root)`.
+
+## Qué muestra
+
+- Filtros por tipo de equipo (armas, armadura, accesorios y cada tipo), clase y rango de nivel, además de la búsqueda por ítem, jugador o tienda.
+- Cada columna de las tablas se ordena con un clic en su encabezado (nivel, precio, ofertas, vendidos...).
+- La página de cada ítem pide su historial completo a la base y dibuja la curva de precio: mediana y mínimo en venta por hora o por día, cada copia vista y las ventas en verde, con rangos de 24 h, 7 días, 30 días y todo.
+- `catalog.json` trae el tipo, nivel y clase de cada equipo (del catálogo del juego de MSCE).
